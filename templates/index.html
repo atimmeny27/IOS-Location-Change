@@ -1,0 +1,476 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Virtual Location Simulator</title>
+    <!-- Mapbox CSS -->
+    <link href="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.css" rel="stylesheet" />
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.6.0/jquery.min.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.css" />
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.js"></script>
+
+    <style>
+        #map { height: 100vh; }
+        #controls {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            background: rgba(0, 0, 0, 0.75);
+            padding: 10px;
+            border-radius: 5px;
+            z-index: 1000;
+        }
+        #controls button {
+            margin-top: 5px;
+            width: 100%;
+            color: black;
+            font-weight: 700
+        }
+        #controls h3 {
+            color: white;
+        }
+        #route-panel {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background: rgba(0, 0, 0, 0.75);
+            padding: 20px;
+            border-radius: 10px;
+            z-index: 1001;
+        }
+        #route-panel h3 {
+            font-size: 18px;
+            font-weight: 700;
+            margin-bottom: 10px;
+            color: white; /* ensures heading is readable */
+            text-align: center;
+        }
+
+        #route-panel button {
+            font-size: 14px;
+            font-weight: 700;
+        }
+        #routeInfo p {
+            margin: 0;
+        }
+        #routeInfo h3 {
+            margin-bottom: 5px;
+        }
+    </style>
+
+    <script>
+        toastr.options = {
+            "positionClass": "toast-bottom-right",
+            "timeOut": "3000",
+            "closeButton": true,
+            "progressBar": false
+          };
+    </script>
+
+</head>
+<body>
+
+<div id="etaOutput" style="color: white; text-align: center;"></div>
+<div id="banner" style="display: none; position: absolute; top: 0; width: 100%; background: #97e898; text-align: center; padding: 10px; font-weight: bold; font-size: 16px; z-index: 1002;"></div>
+<div id="map"></div>
+<div id="notifications"></div>
+
+<div id="controls">
+    <h3>Location Controls</h3>
+    <button id="laptopLocButton">Show my Location</button>
+    <button id="clearLocationButton">Clear Location</button>
+</div>
+
+<div id="route-panel">
+  <h3>Route Mode</h3>
+  <button id="moveNowBtn">Move Now</button>
+  <button id="startTripBtn">Start a Trip</button>
+</div>
+
+<script>
+function setupRouteButtons() {
+  const panel = document.getElementById('route-panel');
+  panel.innerHTML = `
+    <h3>Route Mode</h3>
+    <button id="moveNowBtn">Move Now</button>
+    <button id="startTripBtn">Start a Trip</button>
+  `;
+
+  document.getElementById('moveNowBtn').onclick = setupMoveNow;
+  document.getElementById('startTripBtn').onclick = setupTripUI;
+}
+
+function setupMoveNow() {
+  const panel = document.getElementById('route-panel');
+  panel.innerHTML = `
+    <h3>Move Now</h3>
+    <button id="dropPinBtn">📍 Drop Pin</button>
+    <button id="backBtn">⬅ Back</button>
+  `;
+
+  document.getElementById('dropPinBtn').onclick = () => {
+    toastr.info("Click on the map to drop a pin.");
+    dropPinMode = 'teleport'; 
+  };
+  document.getElementById('backBtn').onclick = setupInitialUI;
+}
+
+function setupTripUI() {
+  const panel = document.getElementById('route-panel');
+  panel.innerHTML = `
+    <h3>Trip Planner</h3>
+    <div id="trip-ui" style="margin-top: 10px; display: flex; flex-direction: column; gap: 8px;">
+      <button disabled style="background-color: gray; cursor: not-allowed;">Select Point A</button>
+      <button disabled style="background-color: gray; cursor: not-allowed;">Select Point B</button>
+      <hr>
+      <button disabled style="background-color: gray; cursor: not-allowed;">Preview Route</button>
+      <button disabled style="background-color: gray; cursor: not-allowed;">Start Route</button>
+      <button disabled style="background-color: gray; cursor: not-allowed;">Stop Route</button>
+    </div>
+  `;
+}
+
+document.getElementById('moveNowBtn').onclick = setupMoveNow;
+document.getElementById('startTripBtn').onclick = setupTripUI;
+</script>
+
+<style>
+  #route-panel {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    background: rgba(0, 0, 0, 0.75);
+    padding: 20px;
+    border-radius: 10px;
+    z-index: 1001;
+  }
+  #route-panel h3 {
+    font-size: 18px;
+    font-weight: 700;
+    margin-bottom: 10px;
+    color: white;
+    text-align: center;
+  }
+  #route-panel button {
+    width: 100%;
+    padding: 8px;
+    font-size: 14px;
+    font-weight: 700;
+    border: none;
+    border-radius: 4px;
+    background: white;
+    cursor: pointer;
+  }
+</style>
+
+<!-- Mapbox JS -->
+<script src="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.js"></script>
+
+<script>
+mapboxgl.accessToken = 'pk.eyJ1IjoiYXRpbW1lbnkiLCJhIjoiY21haDhoN291MDJyajJpb2k1OGR0ZXZ1NiJ9.x6UTBaj6mWYRp7Z8b3eHAQ';
+
+const map = new mapboxgl.Map({
+  container: 'map',
+  style: 'mapbox://styles/mapbox/streets-v12',
+  center: [-73.9851, 40.7589],
+  zoom: 12
+});
+
+let dropPinMode = null;
+let myLocationMarker = null;
+let pointA = null;
+let pointB = null;
+let tripInterval = null;
+
+navigator.geolocation.getCurrentPosition(
+  function (position) {
+    const { latitude, longitude } = position.coords;
+
+    map.setCenter([longitude, latitude]);
+
+    myLocationMarker = new mapboxgl.Marker({ color: 'blue' })
+      .setLngLat([longitude, latitude])
+      .setPopup(new mapboxgl.Popup().setText("You are here"))
+      .addTo(map);
+  },
+  function (err) {
+    console.warn('Geolocation error:', err.message);
+  },
+  {
+    enableHighAccuracy: true
+  }
+);
+
+// Create the ETA box below the route panel
+const etaBox = document.createElement('div');
+etaBox.id = 'eta-box';
+etaBox.style.position = 'absolute';
+etaBox.style.top = '425px';
+etaBox.style.right = '10px';
+etaBox.style.background = '#222';
+etaBox.style.color = 'white';
+etaBox.style.padding = '10px';
+etaBox.style.borderRadius = '10px';
+etaBox.style.zIndex = '1001';
+etaBox.style.display = 'none';
+etaBox.style.fontWeight = 'bold';
+etaBox.style.textAlign = 'center';
+document.body.appendChild(etaBox);
+
+function showETA(message) {
+  etaBox.innerText = `🕒 ETA: ${message}`;
+  etaBox.style.display = 'block';
+}
+
+function hideETA() {
+  etaBox.innerText = '';
+  etaBox.style.display = 'none';
+}
+
+function setupInitialUI() {
+  const panel = document.getElementById('route-panel');
+  panel.innerHTML = `
+    <h3>Route Mode</h3>
+    <div style="display: flex; flex-direction: column; gap: 12px; margin-top: 10px;">
+      <button id="moveNowBtn">Move Now</button>
+      <button id="startTripBtn">Start a Trip</button>
+    </div>
+  `;
+  document.getElementById('moveNowBtn').onclick = setupMoveNow;
+  document.getElementById('startTripBtn').onclick = setupTripUI;
+}
+
+function setupMoveNow() {
+  const panel = document.getElementById('route-panel');
+  panel.innerHTML = `
+    <h3>Move Now</h3>
+    <div style="display: flex; flex-direction: column; gap: 12px; margin-top: 10px;">
+      <button id="dropPinBtn">📍 Drop Pin</button>
+      <button id="backBtn">⬅ Back</button>
+    </div>
+  `;
+  document.getElementById('dropPinBtn').onclick = () => {
+    toastr.info("Click on the map to drop a pin.");
+    dropPinMode = 'teleport';
+  };
+  document.getElementById('backBtn').onclick = setupInitialUI;
+}
+
+function showBanner(message) {
+    const banner = document.getElementById('banner');
+    banner.innerText = message;
+    banner.style.display = 'block';
+}
+
+function hideBanner() {
+    document.getElementById('banner').style.display = 'none';
+}
+    
+function setupTripUI() {
+  const panel = document.getElementById('route-panel');
+  panel.innerHTML = `
+    <h3>Trip Planner</h3>
+    <div style="display: flex; flex-direction: column; gap: 12px; margin-top: 10px;">
+      <button id="selectPointA">Select Point A</button>
+      <button id="selectPointB">Select Point B</button>
+      <button id="useCurrentA">Use Current Location as A</button>
+      <button id="useCurrentB">Use Current Location as B</button>
+      <button id="startRoute" disabled>Start Route</button>
+      <button id="backBtn">⬅ Back</button>
+    </div>
+  `;
+  
+  document.getElementById('selectPointA').onclick = () => {
+    dropPinMode = 'A';
+    showBanner('📍 Click To Select Point A Now 📍');
+  };
+
+  document.getElementById('selectPointB').onclick = () => {
+    dropPinMode = 'B';
+    showBanner('📍Click To Select Point B Now 📍');
+  };
+  
+  
+  document.getElementById('useCurrentA').onclick = () => {
+    navigator.geolocation.getCurrentPosition(pos => {
+      pointA = [pos.coords.longitude, pos.coords.latitude];
+      toastr.success("Set Point A to Current Location");
+      checkRouteReady();
+    });
+  };
+  document.getElementById('useCurrentB').onclick = () => {
+    navigator.geolocation.getCurrentPosition(pos => {
+      pointB = [pos.coords.longitude, pos.coords.latitude];
+      toastr.success("Set Point B to Current Location");
+      checkRouteReady();
+    });
+  };
+  document.getElementById('backBtn').onclick = setupInitialUI;
+}
+    
+function setupRouteInProgressUI() {
+  const panel = document.getElementById('route-panel');
+  panel.innerHTML = `
+    <h3>Route In Progress</h3>
+    <div style="display: flex; flex-direction: column; gap: 12px; margin-top: 10px; color: white;">
+      <label><input type="radio" name="mode" value="time" checked> Choose Time (minutes)</label>
+      <input type="number" id="timeInput" placeholder="Minutes" min="1" step="1" />
+
+      <label><input type="radio" name="mode" value="speed"> Choose Speed (mph)</label>
+      <input type="number" id="speedInput" placeholder="MPH" min="1" step="1" disabled />
+
+      <button id="calcBtn">Calculate</button>
+      <button id="startMovementBtn">Start Movement</button>
+      <button id="backBtn">⬅ Back</button>
+    </div>
+  `;
+
+  const timeInput = document.getElementById('timeInput');
+  const speedInput = document.getElementById('speedInput');
+  const radios = document.getElementsByName('mode');
+
+  const tripDistance = 60; // miles
+
+  radios.forEach(radio => {
+    radio.onchange = () => {
+      if (radio.value === "time") {
+        timeInput.disabled = false;
+        speedInput.disabled = true;
+        if (timeInput.value) {
+          const minutes = parseFloat(timeInput.value);
+          speedInput.value = (tripDistance / (minutes / 60)).toFixed(2);
+        }
+      } else {
+        speedInput.disabled = false;
+        timeInput.disabled = true;
+        if (speedInput.value) {
+          const speed = parseFloat(speedInput.value);
+          timeInput.value = ((tripDistance / speed) * 60).toFixed(0);
+        }
+      }
+    };
+  });
+
+  timeInput.oninput = () => {
+    if (!timeInput.disabled && timeInput.value) {
+      const minutes = parseFloat(timeInput.value);
+      speedInput.value = (tripDistance / (minutes / 60)).toFixed(2);
+    }
+  };
+
+  speedInput.oninput = () => {
+    if (!speedInput.disabled && speedInput.value) {
+      const speed = parseFloat(speedInput.value);
+      timeInput.value = ((tripDistance / speed) * 60).toFixed(0);
+    }
+  };
+
+    document.getElementById('calcBtn').onclick = () => {
+      const minutes = parseFloat(timeInput.value);
+      if (!isNaN(minutes) && minutes > 0) {
+        const now = new Date();
+        now.setMinutes(now.getMinutes() + minutes);
+        const eta = now.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+        showETA(eta);
+        toastr.success("ETA calculated 🎯");
+      } else {
+        toastr.error("Please enter a valid time in minutes.");
+      }
+    };
+
+  document.getElementById('startMovementBtn').onclick = () => {
+    if (!pointA || !pointB) {
+      toastr.error("Please select both points A and B first");
+      return;
+    }
+
+    const minutes = parseFloat(timeInput.value);
+    if (isNaN(minutes) || minutes <= 0) {
+      toastr.error("Please enter a valid time in minutes");
+      return;
+    }
+
+    const steps = 100;
+    const lngStep = (pointB[0] - pointA[0]) / steps;
+    const latStep = (pointB[1] - pointA[1]) / steps;
+    let current = [...pointA];
+    let i = 0;
+
+    if (myLocationMarker) myLocationMarker.remove();
+    myLocationMarker = new mapboxgl.Marker({ color: 'blue' }).setLngLat(current).addTo(map);
+
+    const interval = (minutes * 60 * 1000) / steps;
+
+    clearInterval(tripInterval);
+    tripInterval = setInterval(() => {
+      i++;
+      if (i >= steps) {
+        clearInterval(tripInterval);
+        toastr.success("Trip completed! 🎉");
+        return;
+      }
+      current[0] += lngStep;
+      current[1] += latStep;
+      myLocationMarker.setLngLat(current);
+      fetch('/set_location', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ lat: current[1], lng: current[0] })
+      });
+    }, interval);
+
+    const eta = new Date(Date.now() + minutes * 60000).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+    showETA(eta);
+    toastr.success("Trip started 🚗");
+  };
+
+  document.getElementById('backBtn').onclick = setupTripUI;
+}
+
+function checkRouteReady() {
+    if (pointA && pointB) {
+    const btn = document.getElementById('startRoute');
+    btn.disabled = false;
+    btn.onclick = setupRouteInProgressUI;
+    }
+}
+
+map.on('click', e => {
+  if (!dropPinMode) return;
+
+  const { lng, lat } = e.lngLat;
+  console.log('Map clicked at', lng, lat, 'with mode:', dropPinMode);
+
+  if (dropPinMode === 'teleport') {
+    fetch('/set_location', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ lat, lng })
+    }).then(() => {
+      toastr.success(`Teleported to: ${lat.toFixed(5)}, ${lng.toFixed(5)}`);
+      new mapboxgl.Marker({ color: 'green' })
+        .setLngLat([lng, lat])
+        .setPopup(new mapboxgl.Popup().setText("Teleported here"))
+        .addTo(map);
+    });
+  } else if (dropPinMode === 'A') {
+    pointA = [lng, lat];
+    toastr.success("Point A set");
+    checkRouteReady();
+    hideBanner();
+  } else if (dropPinMode === 'B') {
+    pointB = [lng, lat];
+    toastr.success("Point B set");
+    checkRouteReady();
+    hideBanner();
+  }
+
+  dropPinMode = null;
+});
+
+setupInitialUI();
+</script>
+
+</body>
+</html>

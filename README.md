@@ -28,6 +28,8 @@ https://github.com/alexdalat/ios-virtual-loc
 ```
 
 ## Video Tutorial (Instiallation)
-
+Once you have git cloned with step 1, search for install.mp4 inside of finder
 
 ## Video Tutorial (How To Use)
+Once you have git cloned with step 1, search for use.mp4 inside of finder
+

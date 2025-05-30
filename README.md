@@ -8,7 +8,7 @@ Easily change your location by launching the flask server and connecting an iPho
 ```bash
 git clone https://github.com/atimmeny27/IOS-Location-Change
 cd IOS-Location-Change
-pip install -r requirements.txt
+python3 -m pip install -r requirements.txt
 clear
 ```
 2. Once this is done, paste this in

@@ -20,6 +20,12 @@ python3 main.py
 ```bash
 http://127.0.0.1:2787
 ```
+5. Make sure to press 'Control' + 'C' in the terminal when you are done to close the port, note if you close the port your location will return to where it actually is.
+6. For future use, all that is required is 
+```bash
+cd IOS-Location-Change
+python3 main.py
+```
 
 
 Originally forked from the git repo below and done as a project to work on my frontend html/css as well as backend logic, most of which was from the original repository.
